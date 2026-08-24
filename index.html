@@ -97,8 +97,9 @@
   .blank-item{ padding:9px 2px; border-bottom:1px solid #ddd; page-break-inside:avoid; }
   .blank-num{ font-weight:700; margin-right:6px; }
   .blank-meaning{ font-size:12px; color:#333; }
+  .ja-highlight{ color:#c0392b; font-weight:700; }
   .blank-example{ font-size:12px; color:#444; margin-top:3px; }
-  .blank-underline{ display:inline-block; border-bottom:2px solid #333; min-width:60px; height:1.05em; vertical-align:text-bottom; margin:0 2px; }
+  .blank-underline{ display:inline-block; border-bottom:2px solid #333; min-width:78px; height:1.5em; vertical-align:text-bottom; margin:0 3px; }
   .blank-answer-line{ margin-top:4px; border-bottom:1px solid #999; height:18px; }
   .blank-answer-multi{ display:flex; gap:10px; margin-top:4px; align-items:flex-end; }
   .blank-answer-seg{ flex:1; border-bottom:1px solid #999; height:18px; }
@@ -108,16 +109,16 @@
   .fold-instructions{ font-size:11px; color:#555; margin-bottom:10px; line-height:1.7; }
   .fold-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   .fold-table td{ padding:7px 6px; border-bottom:1px solid #ddd; vertical-align:middle; }
-  .fold-num{ width:28px; color:#888; font-size:11px; }
-  .fold-ja{ width:26%; color:#333; }
-  .fold-practice{ width:36%; border-left:1px dashed #ccc; }
-  .fold-en{ width:20%; font-family:'JetBrains Mono'; font-weight:700; color:#111; border-left:2px dashed #333; padding-left:10px; }
+  .fold-num{ width:22px; color:#888; font-size:10.5px; }
+  .fold-ja{ width:18%; color:#333; }
+  .fold-practice{ width:46%; border-left:1px dashed #ccc; }
+  .fold-en{ width:18%; font-family:'JetBrains Mono'; font-weight:700; color:#111; border-left:2px dashed #333; padding-left:10px; }
   .fold-ja-h,.fold-practice-h,.fold-en-h{ font-size:10px; color:#999; font-weight:400; padding-bottom:4px; border-bottom:2px solid #333; }
   .fold-practice-h{ border-left:1px dashed #ccc; }
   .fold-en-h{ border-left:2px dashed #333; padding-left:10px; }
-  .landscape .fold-ja{ width:20%; }
-  .landscape .fold-practice{ width:50%; }
-  .landscape .fold-en{ width:18%; }
+  .landscape .fold-ja{ width:14%; }
+  .landscape .fold-practice{ width:58%; }
+  .landscape .fold-en{ width:15%; }
 
   .blank-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0 20px; }
   .landscape .blank-grid{ grid-template-columns:1fr 1fr 1fr; }
@@ -481,6 +482,7 @@ function renderReview(){
         const [removed] = printCtx.words.splice(idx,1);
         printCtx.excludedWords.push(removed);
         globallyExcludedWords.add(removed.word);
+        delete printCtx.shuffledBlankWords;
         refresh();
       };
       row.appendChild(delBtn);
@@ -504,6 +506,7 @@ function renderReview(){
         const [restored] = printCtx.excludedWords.splice(idx,1);
         printCtx.words.push(restored);
         globallyExcludedWords.delete(restored.word);
+        delete printCtx.shuffledBlankWords;
         refresh();
       };
       row.appendChild(restoreBtn);
@@ -527,6 +530,20 @@ function answerLineHtml(word){
   return `<div class="blank-answer-multi">${parts.join('')}</div>`;
 }
 
+function highlightMeaningInJa(ja, meaning){
+  if(!ja || !meaning) return ja;
+  const firstSeg = meaning.split(/[、，,（(]/)[0].trim();
+  const minLen = firstSeg.length <= 1 ? 1 : 2;
+  for(let len = firstSeg.length; len >= minLen; len--){
+    const candidate = firstSeg.slice(0, len);
+    const idx = ja.indexOf(candidate);
+    if(idx !== -1){
+      return ja.slice(0,idx) + '<span class="ja-highlight">' + ja.slice(idx, idx+candidate.length) + '</span>' + ja.slice(idx+candidate.length);
+    }
+  }
+  return ja;
+}
+
 function chunk(arr, size){
   const out = [];
   for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
@@ -537,7 +554,7 @@ function renderPreview(){
   root.innerHTML = `
     <div class="back-row" id="back">← 単語の確認にもどる</div>
     <h2 style="margin-bottom:4px;">プレビュー</h2>
-    <div class="setting-desc" style="margin-bottom:10px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）。1枚目：折って覚えるシート／2枚目：空所補充／3枚目：2枚目の解答。番号は全シート共通です。</div>
+    <div class="setting-desc" style="margin-bottom:10px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）。1枚目：折って覚えるシート（番号順）／2枚目：空所補充（順番はランダム、番号なし）／3枚目：2枚目と同じ順番の解答。</div>
     <div class="setting-desc" style="margin-bottom:8px;">印刷の向き（単語数が多いときは縦、少なく絞って書く練習を広くしたいときは横がおすすめです）</div>
     <div class="chip-row" id="orientChips" style="margin-bottom:16px;"></div>
     <button class="btn btn-primary" id="btnPrint">🖨 印刷する</button>
@@ -595,9 +612,18 @@ function buildFoldPages(words, title){
   return out;
 }
 
-function buildBlankPages(words, title){
+function shuffleArray(arr){
+  const a = arr.slice();
+  for(let i=a.length-1; i>0; i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+function buildBlankPages(shuffledWords, title){
   const perPage = 30;
-  const pages = chunk(words, perPage);
+  const pages = chunk(shuffledWords, perPage);
   const out = [];
   pages.forEach((pageWords, pi)=>{
     const page = document.createElement('div');
@@ -605,15 +631,14 @@ function buildBlankPages(words, title){
     page.innerHTML = sheetHeader(title, `空所補充（例文の穴埋め） ${pi+1}/${pages.length}ページ`);
     const grid = document.createElement('div');
     grid.className = 'blank-grid';
-    pageWords.forEach((e,idx)=>{
-      const num = pi*perPage + idx + 1;
+    pageWords.forEach(e=>{
       const div = document.createElement('div');
       div.className = 'blank-item';
       const ex = e.example_en ? blankExample(e.example_en, e.word) : null;
+      const hint = (ex && e.example_ja) ? highlightMeaningInJa(e.example_ja, e.meaning) : `意味：${e.meaning}`;
       div.innerHTML = `
-        <div><span class="blank-num">(${num})</span><span class="blank-meaning">意味：${e.meaning}</span></div>
-        ${ex ? `<div class="blank-example">${ex.html}</div>` : ''}
-        ${answerLineHtml(e.word)}`;
+        <div class="blank-meaning">${hint}</div>
+        ${ex ? `<div class="blank-example">${ex.html}</div>` : `<div class="blank-example">${answerLineHtml(e.word)}</div>`}`;
       grid.appendChild(div);
     });
     page.appendChild(grid);
@@ -622,27 +647,21 @@ function buildBlankPages(words, title){
   return out;
 }
 
-function buildAnswerPages(words, title){
-  const perPage = 15;
-  const pages = chunk(words, perPage);
+function buildAnswerPages(shuffledWords, title){
+  const perPage = 30;
+  const pages = chunk(shuffledWords, perPage);
   const out = [];
   pages.forEach((pageWords, pi)=>{
     const page = document.createElement('div');
     page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `空所補充・解答 ${pi+1}/${pages.length}ページ`);
+    page.innerHTML = sheetHeader(title, `空所補充・解答（問題と同じ順番） ${pi+1}/${pages.length}ページ`);
     const grid = document.createElement('div');
-    grid.className = 'wl-grid';
-    const half = Math.ceil(pageWords.length/2);
-    [pageWords.slice(0,half), pageWords.slice(half)].forEach((colWords, colIdx)=>{
-      const table = document.createElement('table');
-      table.className = 'wl-table';
-      colWords.forEach((e,idx)=>{
-        const globalIdx = pi*perPage + (colIdx===0 ? idx : half+idx) + 1;
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="wcol" style="width:20%;">(${globalIdx})</td><td class="mcol">${e.word}</td>`;
-        table.appendChild(tr);
-      });
-      grid.appendChild(table);
+    grid.className = 'blank-grid';
+    pageWords.forEach(e=>{
+      const div = document.createElement('div');
+      div.className = 'blank-item';
+      div.innerHTML = `<span class="wcol">${e.word}</span>`;
+      grid.appendChild(div);
     });
     page.appendChild(grid);
     out.push(page);
@@ -654,9 +673,10 @@ function buildPrintSheet(words, grade, rangeLabel){
   const sheet = document.getElementById('printSheet');
   sheet.innerHTML = '';
   const title = `${grade}年生 単語プリント（${rangeLabel}）`;
+  if(!printCtx.shuffledBlankWords) printCtx.shuffledBlankWords = shuffleArray(words);
   buildFoldPages(words, title).forEach(p=>sheet.appendChild(p));
-  buildBlankPages(words, title).forEach(p=>sheet.appendChild(p));
-  buildAnswerPages(words, title).forEach(p=>sheet.appendChild(p));
+  buildBlankPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
+  buildAnswerPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
 }
 
 nav({screen:'picker'});
