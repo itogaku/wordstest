@@ -70,11 +70,6 @@
   .btn-ghost{background:transparent; border:1px solid var(--line); color:var(--text);}
   .search-input{width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--surface); color:var(--text); font-size:14px; font-family:'Zen Kaku Gothic New'; box-sizing:border-box;}
   .btn-ghost:active{transform:scale(0.97);}
-  .format-tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
-  .format-tab{flex:1; min-width:140px; padding:14px 12px; border-radius:14px; border:1px solid var(--line); background:var(--surface-soft); cursor:pointer; text-align:center;}
-  .format-tab.selected{background:linear-gradient(135deg,var(--sun),var(--sun-deep)); border-color:var(--sun);}
-  .format-tab .ico{font-size:22px;}
-  .format-tab .lbl{font-family:'Zen Maru Gothic'; font-weight:800; font-size:13px; margin-top:4px;}
   .back-row{font-size:13px; color:var(--text-dim); cursor:pointer; margin-bottom:10px; display:flex; align-items:center; gap:4px;}
   .toast{position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--surface); border:1px solid var(--line); color:var(--text); padding:10px 18px; border-radius:999px; font-size:13px; z-index:50; opacity:0; transition:.25s; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,0.08);}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
@@ -110,15 +105,32 @@
   .blank-answer-gap{ flex:0.6; height:18px; text-decoration-line:underline; text-decoration-style:wavy; text-decoration-color:#999; text-decoration-thickness:1.5px; }
   .blank-answer-ellipsis{ flex:0.4; height:18px; display:flex; align-items:flex-end; justify-content:center; color:#555; font-size:15px; padding-bottom:1px; }
 
+  .fold-instructions{ font-size:11px; color:#555; margin-bottom:10px; line-height:1.7; }
+  .fold-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .fold-table td{ padding:7px 6px; border-bottom:1px solid #ddd; vertical-align:middle; }
+  .fold-num{ width:28px; color:#888; font-size:11px; }
+  .fold-ja{ width:26%; color:#333; }
+  .fold-practice{ width:36%; border-left:1px dashed #ccc; }
+  .fold-en{ width:20%; font-family:'JetBrains Mono'; font-weight:700; color:#111; border-left:2px dashed #333; padding-left:10px; }
+  .fold-ja-h,.fold-practice-h,.fold-en-h{ font-size:10px; color:#999; font-weight:400; padding-bottom:4px; border-bottom:2px solid #333; }
+  .fold-practice-h{ border-left:1px dashed #ccc; }
+  .fold-en-h{ border-left:2px dashed #333; padding-left:10px; }
+  .landscape .fold-ja{ width:20%; }
+  .landscape .fold-practice{ width:50%; }
+  .landscape .fold-en{ width:18%; }
+
+  .blank-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0 20px; }
+  .landscape .blank-grid{ grid-template-columns:1fr 1fr 1fr; }
+
   @media print{
     body{ background:#fff; }
     #app-shell{ display:none; }
     #printSheet{ display:block !important; margin-top:0; }
     .sheet-page{ border:none; box-shadow:none; padding:0; margin-bottom:0; border-radius:0; max-width:none; page-break-after:always; }
     .sheet-page:last-child{ page-break-after:auto; }
-    @page{ margin: 14mm 12mm; }
   }
 </style>
+<style id="orientationStyle"></style>
 </head>
 <body>
 <div id="app-shell">
@@ -218,7 +230,6 @@ function render(){
   if(route.screen !== 'preview') document.getElementById('printSheet').classList.remove('preview-visible');
   if(route.screen === 'picker') return renderPicker();
   if(route.screen === 'review') return renderReview();
-  if(route.screen === 'format') return renderFormatChoice();
   if(route.screen === 'preview') return renderPreview();
 }
 
@@ -427,13 +438,17 @@ function renderPicker(){
 }
 
 let printCtx = null;
+let printOrientation = 'portrait';
+function applyOrientationStyle(){
+  const style = document.getElementById('orientationStyle');
+  style.textContent = printOrientation === 'landscape'
+    ? '@media print { @page { size: landscape; margin: 12mm 14mm; } }'
+    : '@media print { @page { size: portrait; margin: 14mm 12mm; } }';
+  const sheet = document.getElementById('printSheet');
+  if(printOrientation === 'landscape') sheet.classList.add('landscape');
+  else sheet.classList.remove('landscape');
+}
 const globallyExcludedWords = new Set(); // persists across range re-selection within the session
-const FORMATS = [
-  {key:'list',  ico:'📋', label:'単語一覧（暗記用）'},
-  {key:'en2ja', ico:'🇬🇧→🇯🇵', label:'英語→日本語（意味を書く）'},
-  {key:'ja2en', ico:'🇯🇵→🇬🇧', label:'日本語→英語（単語を書く）'},
-  {key:'blank', ico:'📝', label:'空所補充（例文の穴埋め）'},
-];
 
 function renderReview(){
   if(!printCtx.excludedWords) printCtx.excludedWords = [];
@@ -444,7 +459,7 @@ function renderReview(){
     <div class="card" id="wordList" style="max-height:400px; overflow-y:auto;"></div>
     <div class="setting-desc" id="excludedHeader" style="margin:14px 0 6px; display:none;">除外した単語</div>
     <div class="card" id="excludedList" style="max-height:200px; overflow-y:auto; display:none;"></div>
-    <button class="btn btn-primary" id="btnToFormat" style="margin-top:14px;">この単語でプリント形式を選ぶ</button>
+    <button class="btn btn-primary" id="btnToFormat" style="margin-top:14px;">この単語でプリントを作る</button>
   `;
   document.getElementById('back').onclick = ()=>nav({screen:'picker'});
   const box = document.getElementById('wordList');
@@ -498,46 +513,7 @@ function renderReview(){
     btn.disabled = printCtx.words.length === 0;
   }
   refresh();
-  document.getElementById('btnToFormat').onclick = ()=>nav({screen:'format'});
-}
-
-function renderFormatChoice(){
-  if(!printCtx.formats) printCtx.formats = new Set();
-  root.innerHTML = `
-    <div class="back-row" id="back">← 単語の確認にもどる</div>
-    <h2 style="margin-bottom:4px;">プリントの形式を選ぶ（複数可）</h2>
-    <div class="setting-desc" style="margin-bottom:16px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）</div>
-    <div class="format-tabs" id="formatTabs"></div>
-    <button class="btn btn-primary" id="btnPreview" style="margin-top:16px;">選んだ形式をプレビューする</button>
-  `;
-  document.getElementById('back').onclick = ()=>nav({screen:'review'});
-  const tabs = document.getElementById('formatTabs');
-  FORMATS.forEach(f=>{
-    const tab = document.createElement('div');
-    tab.className = 'format-tab' + (printCtx.formats.has(f.key) ? ' selected' : '');
-    tab.innerHTML = `<div class="ico">${f.ico}</div><div class="lbl">${f.label}</div>`;
-    tab.onclick = ()=>{
-      if(printCtx.formats.has(f.key)) printCtx.formats.delete(f.key);
-      else printCtx.formats.add(f.key);
-      renderFormatChoice();
-    };
-    tabs.appendChild(tab);
-  });
-  const btn = document.getElementById('btnPreview');
-  btn.disabled = printCtx.formats.size === 0;
-  btn.onclick = ()=>nav({screen:'preview'});
-}
-
-function groupBySections(words){
-  const groups = [];
-  const seen = new Set();
-  words.forEach(e=>{
-    const key = e.program+'|'+e.section;
-    let g = groups.find(x=>x.key===key);
-    if(!g){ g = {key, program:e.program, section:e.section, items:[]}; groups.push(g); }
-    g.items.push(e);
-  });
-  return groups;
+  document.getElementById('btnToFormat').onclick = ()=>nav({screen:'preview'});
 }
 
 function answerLineHtml(word){
@@ -558,17 +534,29 @@ function chunk(arr, size){
 }
 
 function renderPreview(){
-  const chosenFormats = FORMATS.filter(f=>printCtx.formats.has(f.key));
   root.innerHTML = `
-    <div class="back-row" id="back">← 形式選択にもどる</div>
+    <div class="back-row" id="back">← 単語の確認にもどる</div>
     <h2 style="margin-bottom:4px;">プレビュー</h2>
-    <div class="setting-desc" style="margin-bottom:16px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）・${chosenFormats.map(f=>f.label).join('／')}。テスト形式には解答ページが最後にまとめて付きます。下にプレビューを表示しています。内容を確認してから印刷してください。</div>
-    <button class="btn btn-primary" id="btnPrint">🖨 まとめて印刷する</button>
-    <button class="btn btn-ghost" id="btnBack2" style="margin-top:10px;">形式を選び直す</button>
+    <div class="setting-desc" style="margin-bottom:10px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）。1枚目：折って覚えるシート／2枚目：空所補充／3枚目：2枚目の解答。番号は全シート共通です。</div>
+    <div class="setting-desc" style="margin-bottom:8px;">印刷の向き（単語数が多いときは縦、少なく絞って書く練習を広くしたいときは横がおすすめです）</div>
+    <div class="chip-row" id="orientChips" style="margin-bottom:16px;"></div>
+    <button class="btn btn-primary" id="btnPrint">🖨 印刷する</button>
+    <button class="btn btn-ghost" id="btnBack2" style="margin-top:10px;">単語の確認にもどる</button>
   `;
-  document.getElementById('back').onclick = ()=>nav({screen:'format'});
-  document.getElementById('btnBack2').onclick = ()=>nav({screen:'format'});
-  buildPrintSheet(chosenFormats.map(f=>f.key), printCtx.words, printCtx.grade, printCtx.rangeLabel);
+  document.getElementById('back').onclick = ()=>nav({screen:'review'});
+  document.getElementById('btnBack2').onclick = ()=>nav({screen:'review'});
+
+  const orientChips = document.getElementById('orientChips');
+  [{key:'portrait', label:'縦'}, {key:'landscape', label:'横'}].forEach(o=>{
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (printOrientation===o.key ? ' selected':'');
+    chip.textContent = o.label;
+    chip.onclick = ()=>{ printOrientation = o.key; renderPreview(); };
+    orientChips.appendChild(chip);
+  });
+
+  buildPrintSheet(printCtx.words, printCtx.grade, printCtx.rangeLabel);
+  applyOrientationStyle();
   document.getElementById('printSheet').classList.add('preview-visible');
   document.getElementById('btnPrint').onclick = ()=>{ window.print(); };
 }
@@ -577,25 +565,56 @@ function sheetHeader(title, sub){
   return `<div class="sheet-header"><div class="sheet-title">${title}</div><div class="sheet-sub">${sub}</div></div>`;
 }
 
-function buildListPages(words, title){
-  const pages = chunk(words, 60);
+function buildFoldPages(words, title){
+  const perPage = 20;
+  const pages = chunk(words, perPage);
   const out = [];
   pages.forEach((pageWords, pi)=>{
     const page = document.createElement('div');
     page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `単語一覧（暗記用） ${pi+1}/${pages.length}ページ`);
+    page.innerHTML = sheetHeader(title, `折って覚えるシート ${pi+1}/${pages.length}ページ`) +
+      `<div class="fold-instructions">① 点線で谷折りにして右の英語を隠す　② 日本語を見て真ん中に英語を書く　③ 開いて答え合わせ　④ 間違えた単語は真ん中のスペースに何度も書いて練習する</div>`;
+    const table = document.createElement('table');
+    table.className = 'fold-table';
+    const thead = document.createElement('tr');
+    thead.innerHTML = `<td class="fold-num"></td><td class="fold-ja-h">日本語</td><td class="fold-practice-h">書いて練習</td><td class="fold-en-h">英語（答え）</td>`;
+    table.appendChild(thead);
+    pageWords.forEach((e,idx)=>{
+      const num = pi*perPage + idx + 1;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="fold-num">(${num})</td>
+        <td class="fold-ja">${e.meaning}</td>
+        <td class="fold-practice"></td>
+        <td class="fold-en">${e.word}</td>`;
+      table.appendChild(tr);
+    });
+    page.appendChild(table);
+    out.push(page);
+  });
+  return out;
+}
+
+function buildBlankPages(words, title){
+  const perPage = 30;
+  const pages = chunk(words, perPage);
+  const out = [];
+  pages.forEach((pageWords, pi)=>{
+    const page = document.createElement('div');
+    page.className = 'sheet-page';
+    page.innerHTML = sheetHeader(title, `空所補充（例文の穴埋め） ${pi+1}/${pages.length}ページ`);
     const grid = document.createElement('div');
-    grid.className = 'wl-grid';
-    const half = Math.ceil(pageWords.length/2);
-    [pageWords.slice(0,half), pageWords.slice(half)].forEach(colWords=>{
-      const table = document.createElement('table');
-      table.className = 'wl-table';
-      colWords.forEach(e=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="wcol">${e.word}</td><td class="mcol">${e.meaning}</td>`;
-        table.appendChild(tr);
-      });
-      grid.appendChild(table);
+    grid.className = 'blank-grid';
+    pageWords.forEach((e,idx)=>{
+      const num = pi*perPage + idx + 1;
+      const div = document.createElement('div');
+      div.className = 'blank-item';
+      const ex = e.example_en ? blankExample(e.example_en, e.word) : null;
+      div.innerHTML = `
+        <div><span class="blank-num">(${num})</span><span class="blank-meaning">意味：${e.meaning}</span></div>
+        ${ex ? `<div class="blank-example">${ex.html}</div>` : ''}
+        ${answerLineHtml(e.word)}`;
+      grid.appendChild(div);
     });
     page.appendChild(grid);
     out.push(page);
@@ -603,79 +622,14 @@ function buildListPages(words, title){
   return out;
 }
 
-function buildEn2JaPages(words, title){
-  const pages = chunk(words, 24);
+function buildAnswerPages(words, title){
+  const perPage = 15;
+  const pages = chunk(words, perPage);
   const out = [];
   pages.forEach((pageWords, pi)=>{
     const page = document.createElement('div');
     page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `英語→日本語（意味を書く） ${pi+1}/${pages.length}ページ`);
-    pageWords.forEach((e,idx)=>{
-      const num = pi*24 + idx + 1;
-      const div = document.createElement('div');
-      div.className = 'blank-item';
-      div.innerHTML = `
-        <div><span class="blank-num">(${num})</span><span class="write-word" style="color:#111;">${e.word}</span></div>
-        <div class="blank-answer-line"></div>`;
-      page.appendChild(div);
-    });
-    out.push(page);
-  });
-  return out;
-}
-
-function buildJa2EnPages(words, title){
-  const pages = chunk(words, 24);
-  const out = [];
-  pages.forEach((pageWords, pi)=>{
-    const page = document.createElement('div');
-    page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `日本語→英語（単語を書く） ${pi+1}/${pages.length}ページ`);
-    pageWords.forEach((e,idx)=>{
-      const num = pi*24 + idx + 1;
-      const div = document.createElement('div');
-      div.className = 'blank-item';
-      div.innerHTML = `
-        <div><span class="blank-num">(${num})</span><span class="blank-meaning">${e.meaning}</span></div>
-        ${answerLineHtml(e.word)}`;
-      page.appendChild(div);
-    });
-    out.push(page);
-  });
-  return out;
-}
-
-function buildBlankPages(words, title){
-  const withExamples = words.filter(e=>e.example_en);
-  const pages = chunk(withExamples, 15);
-  const out = [];
-  pages.forEach((pageWords, pi)=>{
-    const page = document.createElement('div');
-    page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `空所補充（例文の穴埋め） ${pi+1}/${pages.length}ページ`);
-    pageWords.forEach((e,idx)=>{
-      const num = pi*15 + idx + 1;
-      const div = document.createElement('div');
-      div.className = 'blank-item';
-      const ex = blankExample(e.example_en, e.word);
-      div.innerHTML = `
-        <div><span class="blank-num">(${num})</span><span class="blank-meaning">意味：${e.meaning}</span></div>
-        <div class="blank-example">${ex.html}</div>
-        ${answerLineHtml(e.word)}`;
-      page.appendChild(div);
-    });
-    out.push(page);
-  });
-  return out;
-}
-
-function buildAnswerPages(words, title, subLabel, answerKey){
-  const pages = chunk(words, 70);
-  const out = [];
-  pages.forEach((pageWords, pi)=>{
-    const page = document.createElement('div');
-    page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `${subLabel}・解答 ${pi+1}/${pages.length}ページ`);
+    page.innerHTML = sheetHeader(title, `空所補充・解答 ${pi+1}/${pages.length}ページ`);
     const grid = document.createElement('div');
     grid.className = 'wl-grid';
     const half = Math.ceil(pageWords.length/2);
@@ -683,9 +637,9 @@ function buildAnswerPages(words, title, subLabel, answerKey){
       const table = document.createElement('table');
       table.className = 'wl-table';
       colWords.forEach((e,idx)=>{
-        const globalIdx = pi*70 + (colIdx===0 ? idx : half+idx) + 1;
+        const globalIdx = pi*perPage + (colIdx===0 ? idx : half+idx) + 1;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="wcol" style="width:20%;">(${globalIdx})</td><td class="mcol">${answerKey==='meaning' ? e.meaning : e.word}</td>`;
+        tr.innerHTML = `<td class="wcol" style="width:20%;">(${globalIdx})</td><td class="mcol">${e.word}</td>`;
         table.appendChild(tr);
       });
       grid.appendChild(table);
@@ -696,22 +650,13 @@ function buildAnswerPages(words, title, subLabel, answerKey){
   return out;
 }
 
-function buildPrintSheet(formats, words, grade, rangeLabel){
+function buildPrintSheet(words, grade, rangeLabel){
   const sheet = document.getElementById('printSheet');
   sheet.innerHTML = '';
   const title = `${grade}年生 単語プリント（${rangeLabel}）`;
-  const answerSections = [];
-  formats.forEach(format=>{
-    let pages = [];
-    if(format === 'list') pages = buildListPages(words, title);
-    if(format === 'en2ja'){ pages = buildEn2JaPages(words, title); answerSections.push({label:'英語→日本語', key:'meaning'}); }
-    if(format === 'ja2en'){ pages = buildJa2EnPages(words, title); answerSections.push({label:'日本語→英語', key:'word'}); }
-    if(format === 'blank'){ pages = buildBlankPages(words, title); answerSections.push({label:'空所補充', key:'word'}); }
-    pages.forEach(p=>sheet.appendChild(p));
-  });
-  answerSections.forEach(sec=>{
-    buildAnswerPages(words, title, sec.label, sec.key).forEach(p=>sheet.appendChild(p));
-  });
+  buildFoldPages(words, title).forEach(p=>sheet.appendChild(p));
+  buildBlankPages(words, title).forEach(p=>sheet.appendChild(p));
+  buildAnswerPages(words, title).forEach(p=>sheet.appendChild(p));
 }
 
 nav({screen:'picker'});
