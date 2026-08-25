@@ -120,6 +120,12 @@
   .landscape .fold-practice{ width:58%; }
   .landscape .fold-en{ width:15%; }
 
+  .check-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:4px 14px; }
+  .landscape .check-grid{ grid-template-columns:repeat(6, 1fr); }
+  .check-item{ display:flex; align-items:baseline; gap:5px; padding:5px 2px; border-bottom:1px solid #eee; font-size:12px; }
+  .check-num{ color:#999; font-size:10px; flex-shrink:0; }
+  .check-en{ font-family:'JetBrains Mono'; font-weight:700; color:#111; }
+
   .blank-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0 20px; }
   .landscape .blank-grid{ grid-template-columns:1fr 1fr 1fr; }
 
@@ -456,7 +462,7 @@ function renderReview(){
   root.innerHTML = `
     <div class="back-row" id="back">← 範囲選択にもどる</div>
     <h2 style="margin-bottom:4px;">単語を確認する</h2>
-    <div class="setting-desc" style="margin-bottom:14px;">不要な単語は「✕」で外せます。外した単語は下に表示され、いつでも戻せます。範囲選択に戻っても除外状態は保存されます。<span id="remainCount"></span></div>
+    <div class="setting-desc" style="margin-bottom:14px;">不要な単語は「✕」で外せます。外した単語は下に表示され、いつでも戻せます。範囲選択に戻っても除外状態は保存されます。番号は印刷される各シートの番号と対応しています。<span id="remainCount"></span></div>
     <div class="card" id="wordList" style="max-height:400px; overflow-y:auto;"></div>
     <div class="setting-desc" id="excludedHeader" style="margin:14px 0 6px; display:none;">除外した単語</div>
     <div class="card" id="excludedList" style="max-height:200px; overflow-y:auto; display:none;"></div>
@@ -473,6 +479,7 @@ function renderReview(){
       const row = document.createElement('div');
       row.className = 'sec-row';
       row.innerHTML = `
+        <div class="sec-count" style="flex:0.3; color:var(--text-dim); font-size:11px;">(${idx+1})</div>
         <div class="sec-name">${e.word}</div>
         <div class="sec-count" style="flex:1.4;">${e.meaning}</div>`;
       const delBtn = document.createElement('div');
@@ -550,11 +557,21 @@ function chunk(arr, size){
   return out;
 }
 
+const SHEET_TYPES = [
+  {key:'checklist', label:'単語一覧（チェック用）'},
+  {key:'fold', label:'折って覚えるシート'},
+  {key:'blank', label:'空所補充'},
+  {key:'answer', label:'空所補充・解答'},
+];
+let includedSheets = new Set(['checklist','fold','blank','answer']);
+
 function renderPreview(){
   root.innerHTML = `
     <div class="back-row" id="back">← 単語の確認にもどる</div>
     <h2 style="margin-bottom:4px;">プレビュー</h2>
-    <div class="setting-desc" style="margin-bottom:10px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）。1枚目：折って覚えるシート（番号順）／2枚目：空所補充（順番はランダム、番号なし）／3枚目：2枚目と同じ順番の解答。</div>
+    <div class="setting-desc" style="margin-bottom:10px;">${printCtx.grade}年生・${printCtx.rangeLabel}（${printCtx.words.length}語）。</div>
+    <div class="setting-desc" style="margin-bottom:8px;">印刷するシートを選ぶ（単語一覧だけを印刷することもできます）</div>
+    <div class="chip-row" id="sheetChips" style="margin-bottom:16px;"></div>
     <div class="setting-desc" style="margin-bottom:8px;">印刷の向き（単語数が多いときは縦、少なく絞って書く練習を広くしたいときは横がおすすめです）</div>
     <div class="chip-row" id="orientChips" style="margin-bottom:16px;"></div>
     <button class="btn btn-primary" id="btnPrint">🖨 印刷する</button>
@@ -562,6 +579,19 @@ function renderPreview(){
   `;
   document.getElementById('back').onclick = ()=>nav({screen:'review'});
   document.getElementById('btnBack2').onclick = ()=>nav({screen:'review'});
+
+  const sheetChips = document.getElementById('sheetChips');
+  SHEET_TYPES.forEach(s=>{
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (includedSheets.has(s.key) ? ' selected':'');
+    chip.textContent = s.label;
+    chip.onclick = ()=>{
+      if(includedSheets.has(s.key)) includedSheets.delete(s.key);
+      else includedSheets.add(s.key);
+      renderPreview();
+    };
+    sheetChips.appendChild(chip);
+  });
 
   const orientChips = document.getElementById('orientChips');
   [{key:'portrait', label:'縦'}, {key:'landscape', label:'横'}].forEach(o=>{
@@ -575,11 +605,37 @@ function renderPreview(){
   buildPrintSheet(printCtx.words, printCtx.grade, printCtx.rangeLabel);
   applyOrientationStyle();
   document.getElementById('printSheet').classList.add('preview-visible');
-  document.getElementById('btnPrint').onclick = ()=>{ window.print(); };
+  const printBtn = document.getElementById('btnPrint');
+  printBtn.disabled = includedSheets.size === 0;
+  printBtn.onclick = ()=>{ window.print(); };
 }
 
 function sheetHeader(title, sub){
   return `<div class="sheet-header"><div class="sheet-title">${title}</div><div class="sheet-sub">${sub}</div></div>`;
+}
+
+function buildChecklistPages(words, title){
+  const perPage = 90;
+  const pages = chunk(words, perPage);
+  const out = [];
+  pages.forEach((pageWords, pi)=>{
+    const page = document.createElement('div');
+    page.className = 'sheet-page';
+    page.innerHTML = sheetHeader(title, `単語一覧（チェック用） ${pi+1}/${pages.length}ページ`) +
+      `<div class="fold-instructions">覚えた単語は横線で消す、まちがえた単語は◯で囲んでください。</div>`;
+    const grid = document.createElement('div');
+    grid.className = 'check-grid';
+    pageWords.forEach((e,idx)=>{
+      const num = pi*perPage + idx + 1;
+      const item = document.createElement('div');
+      item.className = 'check-item';
+      item.innerHTML = `<span class="check-num">(${num})</span><span class="check-en">${e.word}</span>`;
+      grid.appendChild(item);
+    });
+    page.appendChild(grid);
+    out.push(page);
+  });
+  return out;
 }
 
 function buildFoldPages(words, title){
@@ -674,9 +730,10 @@ function buildPrintSheet(words, grade, rangeLabel){
   sheet.innerHTML = '';
   const title = `${grade}年生 単語プリント（${rangeLabel}）`;
   if(!printCtx.shuffledBlankWords) printCtx.shuffledBlankWords = shuffleArray(words);
-  buildFoldPages(words, title).forEach(p=>sheet.appendChild(p));
-  buildBlankPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
-  buildAnswerPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
+  if(includedSheets.has('checklist')) buildChecklistPages(words, title).forEach(p=>sheet.appendChild(p));
+  if(includedSheets.has('fold')) buildFoldPages(words, title).forEach(p=>sheet.appendChild(p));
+  if(includedSheets.has('blank')) buildBlankPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
+  if(includedSheets.has('answer')) buildAnswerPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
 }
 
 nav({screen:'picker'});
