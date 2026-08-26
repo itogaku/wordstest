@@ -99,7 +99,7 @@
   .blank-meaning{ font-size:12px; color:#333; }
   .ja-highlight{ color:#c0392b; font-weight:700; }
   .blank-example{ font-size:12px; color:#444; margin-top:3px; }
-  .blank-underline{ display:inline-block; border-bottom:2px solid #333; min-width:78px; height:1.5em; vertical-align:text-bottom; margin:0 3px; }
+  .blank-underline{ display:inline-block; border-bottom:2px solid #333; min-width:110px; height:3.2em; vertical-align:text-bottom; margin:0 4px; }
   .blank-answer-line{ margin-top:4px; border-bottom:1px solid #999; height:18px; }
   .blank-answer-multi{ display:flex; gap:10px; margin-top:4px; align-items:flex-end; }
   .blank-answer-seg{ flex:1; border-bottom:1px solid #999; height:18px; }
@@ -109,16 +109,15 @@
   .fold-instructions{ font-size:11px; color:#555; margin-bottom:10px; line-height:1.7; }
   .fold-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   .fold-table td{ padding:7px 6px; border-bottom:1px solid #ddd; vertical-align:middle; }
-  .fold-num{ width:16px; color:#888; font-size:10px; padding-left:2px; padding-right:2px; }
-  .fold-ja{ width:12%; color:#333; }
-  .fold-practice{ width:54%; border-left:1px dashed #ccc; }
+  .fold-table td.fold-ja{ width:25%; color:#333; }
+  .fold-practice{ width:44%; border-left:1px dashed #ccc; }
   .fold-en{ width:17%; font-family:'JetBrains Mono'; font-weight:700; color:#111; border-left:2px dashed #333; padding-left:10px; }
   .fold-ja-h,.fold-practice-h,.fold-en-h{ font-size:10px; color:#999; font-weight:400; padding-bottom:4px; border-bottom:2px solid #333; }
   .fold-practice-h{ border-left:1px dashed #ccc; }
   .fold-en-h{ border-left:2px dashed #333; padding-left:10px; }
-  .landscape .fold-ja{ width:9%; }
-  .landscape .fold-practice{ width:64%; }
-  .landscape .fold-en{ width:13%; }
+  .landscape .fold-ja{ width:20%; }
+  .landscape .fold-practice{ width:56%; }
+  .landscape .fold-en{ width:14%; }
 
   .check-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:4px 14px; }
   .landscape .check-grid{ grid-template-columns:repeat(6, 1fr); }
@@ -462,7 +461,7 @@ function renderReview(){
   root.innerHTML = `
     <div class="back-row" id="back">← 範囲選択にもどる</div>
     <h2 style="margin-bottom:4px;">単語を確認する</h2>
-    <div class="setting-desc" style="margin-bottom:14px;">不要な単語は「✕」で外せます。外した単語は下に表示され、いつでも戻せます。範囲選択に戻っても除外状態は保存されます。番号は印刷される各シートの番号と対応しています。<span id="remainCount"></span></div>
+    <div class="setting-desc" style="margin-bottom:14px;">不要な単語は「✕」で外せます。外した単語は下に表示され、いつでも戻せます。範囲選択に戻っても除外状態は保存されます。<span id="remainCount"></span></div>
     <div class="card" id="wordList" style="max-height:400px; overflow-y:auto;"></div>
     <div class="setting-desc" id="excludedHeader" style="margin:14px 0 6px; display:none;">除外した単語</div>
     <div class="card" id="excludedList" style="max-height:200px; overflow-y:auto; display:none;"></div>
@@ -479,7 +478,6 @@ function renderReview(){
       const row = document.createElement('div');
       row.className = 'sec-row';
       row.innerHTML = `
-        <div class="sec-count" style="flex:0.3; color:var(--text-dim); font-size:11px;">(${idx+1})</div>
         <div class="sec-name">${e.word}</div>
         <div class="sec-count" style="flex:1.4;">${e.meaning}</div>`;
       const delBtn = document.createElement('div');
@@ -537,18 +535,27 @@ function answerLineHtml(word){
   return `<div class="blank-answer-multi">${parts.join('')}</div>`;
 }
 
+function toHiragana(s){ return s.replace(/[\u30a1-\u30f6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60)); }
+function toKatakana(s){ return s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)); }
+
 function highlightMeaningInJa(ja, meaning){
   if(!ja || !meaning) return ja;
-  const firstSeg = meaning.split(/[、，,（(]/)[0].trim();
-  const minLen = firstSeg.length <= 1 ? 1 : 2;
-  for(let len = firstSeg.length; len >= minLen; len--){
-    const candidate = firstSeg.slice(0, len);
-    const idx = ja.indexOf(candidate);
-    if(idx !== -1){
-      return ja.slice(0,idx) + '<span class="ja-highlight">' + ja.slice(idx, idx+candidate.length) + '</span>' + ja.slice(idx+candidate.length);
+  const segments = meaning.split(/[、，,（(）)]/).map(s=>s.trim()).filter(Boolean);
+  const jaVariants = [ja, toHiragana(ja), toKatakana(ja)];
+  for(const seg of segments){
+    const minLen = seg.length <= 1 ? 1 : 2;
+    for(let len = seg.length; len >= minLen; len--){
+      const candidate = seg.slice(0, len);
+      for(const jaVariant of jaVariants){
+        const idx = jaVariant.indexOf(candidate);
+        if(idx !== -1){
+          return ja.slice(0,idx) + '<span class="ja-highlight">' + ja.slice(idx, idx+candidate.length) + '</span>' + ja.slice(idx+candidate.length);
+        }
+      }
     }
   }
-  return ja;
+  const fallback = segments[0] || meaning;
+  return ja + `<span class="ja-highlight">（${fallback}）</span>`;
 }
 
 function chunk(arr, size){
@@ -625,11 +632,10 @@ function buildChecklistPages(words, title){
       `<div class="fold-instructions">覚えた単語は横線で消す、まちがえた単語は◯で囲んでください。</div>`;
     const grid = document.createElement('div');
     grid.className = 'check-grid';
-    pageWords.forEach((e,idx)=>{
-      const num = pi*perPage + idx + 1;
+    pageWords.forEach(e=>{
       const item = document.createElement('div');
       item.className = 'check-item';
-      item.innerHTML = `<span class="check-num">(${num})</span><span class="check-en">${e.word}</span>`;
+      item.innerHTML = `<span class="check-en">${e.word}</span>`;
       grid.appendChild(item);
     });
     page.appendChild(grid);
@@ -650,13 +656,11 @@ function buildFoldPages(words, title){
     const table = document.createElement('table');
     table.className = 'fold-table';
     const thead = document.createElement('tr');
-    thead.innerHTML = `<td class="fold-num"></td><td class="fold-ja-h">日本語</td><td class="fold-practice-h">書いて練習</td><td class="fold-en-h">英語（答え）</td>`;
+    thead.innerHTML = `<td class="fold-ja-h">日本語</td><td class="fold-practice-h">書いて練習</td><td class="fold-en-h">英語（答え）</td>`;
     table.appendChild(thead);
-    pageWords.forEach((e,idx)=>{
-      const num = pi*perPage + idx + 1;
+    pageWords.forEach(e=>{
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="fold-num">(${num})</td>
         <td class="fold-ja">${e.meaning}</td>
         <td class="fold-practice"></td>
         <td class="fold-en">${e.word}</td>`;
