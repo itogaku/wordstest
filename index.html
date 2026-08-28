@@ -407,6 +407,11 @@ function renderPicker(){
   const matchedEntries = entriesForGrade.filter(e=>filter.sections.has(e.grade+'|'+e.program+'|'+e.section) && selectedLevels.includes(e.level) && (!filter.importantOnly || e.important));
   const seenW = new Set(); const matchedWords = [];
   for(const e of matchedEntries){ if(!seenW.has(e.word)){ seenW.add(e.word); matchedWords.push(e); } }
+  matchedWords.sort((a,b)=>{
+    if(a.program !== b.program) return a.program - b.program;
+    if(a.section !== b.section) return a.section < b.section ? -1 : 1;
+    return a.word.toLowerCase().localeCompare(b.word.toLowerCase());
+  });
   document.getElementById('countDesc').textContent = filter.sections.size ? `選択中: ${matchedWords.length}語` : 'Programを1つ以上選んでください';
   const nextBtn = document.getElementById('btnNext');
   nextBtn.disabled = matchedWords.length === 0;
@@ -474,7 +479,16 @@ function renderReview(){
   function refresh(){
     document.getElementById('remainCount').textContent = `（${printCtx.words.length}語）`;
     box.innerHTML = '';
+    let lastGroup = null;
     printCtx.words.forEach((e,idx)=>{
+      const groupKey = e.program + '|' + e.section;
+      if(groupKey !== lastGroup){
+        lastGroup = groupKey;
+        const header = document.createElement('div');
+        header.style.cssText = 'font-size:11px; font-weight:700; color:var(--sun-deep); padding:8px 4px 4px; border-top:1px solid var(--line);';
+        header.textContent = `Program${e.program} - ${e.section}`;
+        box.appendChild(header);
+      }
       const row = document.createElement('div');
       row.className = 'sec-row';
       row.innerHTML = `
@@ -488,6 +502,7 @@ function renderReview(){
         printCtx.excludedWords.push(removed);
         globallyExcludedWords.add(removed.word);
         delete printCtx.shuffledBlankWords;
+        delete printCtx.shuffledFoldWords;
         refresh();
       };
       row.appendChild(delBtn);
@@ -512,6 +527,7 @@ function renderReview(){
         printCtx.words.push(restored);
         globallyExcludedWords.delete(restored.word);
         delete printCtx.shuffledBlankWords;
+        delete printCtx.shuffledFoldWords;
         refresh();
       };
       row.appendChild(restoreBtn);
@@ -734,8 +750,9 @@ function buildPrintSheet(words, grade, rangeLabel){
   sheet.innerHTML = '';
   const title = `${grade}年生 単語プリント（${rangeLabel}）`;
   if(!printCtx.shuffledBlankWords) printCtx.shuffledBlankWords = shuffleArray(words);
+  if(!printCtx.shuffledFoldWords) printCtx.shuffledFoldWords = shuffleArray(words);
   if(includedSheets.has('checklist')) buildChecklistPages(words, title).forEach(p=>sheet.appendChild(p));
-  if(includedSheets.has('fold')) buildFoldPages(words, title).forEach(p=>sheet.appendChild(p));
+  if(includedSheets.has('fold')) buildFoldPages(printCtx.shuffledFoldWords, title).forEach(p=>sheet.appendChild(p));
   if(includedSheets.has('blank')) buildBlankPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
   if(includedSheets.has('answer')) buildAnswerPages(printCtx.shuffledBlankWords, title).forEach(p=>sheet.appendChild(p));
 }
