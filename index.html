@@ -481,9 +481,9 @@ const globallyExcludedWords = new Set(); // persists across range re-selection w
 
 function renderReview(){
   if(!printCtx.selected){
-    printCtx.selected = new Set(printCtx.allWords.slice(0,20).map(e=>e.word));
+    printCtx.selected = new Set(printCtx.allWords.slice(0,15).map(e=>e.word));
   }
-  const FOLD_PAGE_SIZE = 20;
+  const FOLD_PAGE_SIZE = 15;
   root.innerHTML = `
     <div class="back-row" id="back">← 範囲選択にもどる</div>
     <h2 style="margin-bottom:4px;">単語を選ぶ</h2>
@@ -740,20 +740,76 @@ function wordTokenCount(word){
   return word.replace(/\.\.\./g,'…').split(/\s+/).filter(t=>t && t!=='～' && t!=='…').length;
 }
 
+// Measures actual rendered row/overhead heights at real print dimensions, then
+// packs rows into pages so nothing gets cut off or forced at a fixed count.
+function paginateByMeasuredHeight(words, buildRowHtml, headHtml, instructionsHtml, orientation, theadHtml){
+  const MM_TO_PX = 96/25.4;
+  const pageWidthMm = orientation === 'landscape' ? 297 : 210;
+  const pageHeightMm = orientation === 'landscape' ? 210 : 297;
+  const marginTBmm = orientation === 'landscape' ? 12 : 14;
+  const marginLRmm = orientation === 'landscape' ? 14 : 12;
+  const usableWidthPx = (pageWidthMm - marginLRmm*2) * MM_TO_PX;
+  const usableHeightPx = (pageHeightMm - marginTBmm*2) * MM_TO_PX;
+
+  const probe = document.createElement('div');
+  probe.style.cssText = `position:absolute; left:-9999px; top:0; width:${usableWidthPx}px; visibility:hidden;`;
+  probe.className = 'sheet-page' + (orientation === 'landscape' ? ' landscape' : '');
+  probe.style.padding = '0';
+  probe.style.maxWidth = 'none';
+  document.body.appendChild(probe);
+
+  // overhead = header + instructions + table head row, present on every page
+  probe.innerHTML = headHtml + (instructionsHtml||'') + `<table class="fold-table">${theadHtml||''}</table>`;
+  const overheadHeight = probe.getBoundingClientRect().height;
+
+  // measure each data row in isolation (no thead), same width context
+  const rowTable = document.createElement('table');
+  rowTable.className = 'fold-table';
+  probe.appendChild(rowTable);
+  const rowHeights = words.map(w=>{
+    rowTable.innerHTML = buildRowHtml(w);
+    return rowTable.getBoundingClientRect().height;
+  });
+
+  document.body.removeChild(probe);
+
+  const pages = [];
+  let current = [];
+  let currentHeight = overheadHeight;
+  words.forEach((w, i)=>{
+    const h = rowHeights[i];
+    if(current.length > 0 && currentHeight + h > usableHeightPx){
+      pages.push(current);
+      current = [];
+      currentHeight = overheadHeight;
+    }
+    current.push(w);
+    currentHeight += h;
+  });
+  if(current.length) pages.push(current);
+  return pages;
+}
+
 function buildFoldPages(words, title){
-  const perPage = printOrientation === 'landscape' ? 13 : 20;
-  const pages = chunk(words, perPage);
+  const theadHtml = `<tr><td class="fold-ja-h">日本語</td><td class="fold-practice-h">書いて練習</td><td class="fold-en-h">英語（答え）</td></tr>`;
+  const instructionsHtml = `<div class="fold-instructions">① 点線で谷折りにして右の英語を隠す　② 日本語を見て真ん中に英語を書く（（　）内の数字は単語の数）　③ 開いて答え合わせ　④ 間違えた単語は真ん中のスペースに何度も書いて練習する</div>`;
+  const rowHtml = (e)=>{
+    const n = wordTokenCount(e.word);
+    return `<tr>
+      <td class="fold-ja">${e.meaning}${n>=2 ? `<span style="color:var(--ink-soft); font-weight:400;">（${n}語）</span>` : ''}</td>
+      <td class="fold-practice"></td>
+      <td class="fold-en">${e.word}</td></tr>`;
+  };
+  const headHtml = sheetHeader(title, '折って覚えるシート');
+  const pages = paginateByMeasuredHeight(words, rowHtml, headHtml, instructionsHtml, printOrientation, theadHtml);
   const out = [];
   pages.forEach((pageWords, pi)=>{
     const page = document.createElement('div');
     page.className = 'sheet-page';
-    page.innerHTML = sheetHeader(title, `折って覚えるシート ${pi+1}/${pages.length}ページ`) +
-      `<div class="fold-instructions">① 点線で谷折りにして右の英語を隠す　② 日本語を見て真ん中に英語を書く（（　）内の数字は単語の数）　③ 開いて答え合わせ　④ 間違えた単語は真ん中のスペースに何度も書いて練習する</div>`;
+    page.innerHTML = sheetHeader(title, `折って覚えるシート ${pi+1}/${pages.length}ページ`) + instructionsHtml;
     const table = document.createElement('table');
     table.className = 'fold-table';
-    const thead = document.createElement('tr');
-    thead.innerHTML = `<td class="fold-ja-h">日本語</td><td class="fold-practice-h">書いて練習</td><td class="fold-en-h">英語（答え）</td>`;
-    table.appendChild(thead);
+    table.innerHTML = theadHtml;
     pageWords.forEach(e=>{
       const n = wordTokenCount(e.word);
       const tr = document.createElement('tr');
