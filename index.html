@@ -741,7 +741,7 @@ function wordTokenCount(word){
 }
 
 function buildFoldPages(words, title){
-  const perPage = 20;
+  const perPage = printOrientation === 'landscape' ? 13 : 20;
   const pages = chunk(words, perPage);
   const out = [];
   pages.forEach((pageWords, pi)=>{
