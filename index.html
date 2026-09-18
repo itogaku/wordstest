@@ -132,9 +132,9 @@
   @media (max-width: 560px){ .word-select-grid{ grid-template-columns:1fr; } }
   .word-select-item{ display:flex; align-items:flex-start; gap:8px; padding:7px 4px; border-bottom:1px solid #eee; cursor:pointer; }
   .word-select-item input[type=checkbox]{ width:17px; height:17px; margin-top:2px; flex-shrink:0; accent-color: var(--sun-text); }
-  .word-select-body{ min-width:0; }
-  .word-select-word{ font-weight:700; font-size:13px; }
-  .word-select-meaning{ font-size:11px; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .word-select-body{ min-width:0; flex:1; }
+  .word-select-word{ font-weight:700; font-size:13px; overflow-wrap:break-word; }
+  .word-select-meaning{ font-size:11px; color:var(--ink-soft); overflow-wrap:break-word; }
   .word-select-group-header{ grid-column:1/-1; font-size:11px; font-weight:700; color:var(--sun-deep); padding:10px 4px 4px; border-top:1px solid var(--line); }
 
   .blank-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0 20px; }
@@ -652,8 +652,16 @@ function renderPreview(){
     chip.className = 'chip' + (includedSheets.has(s.key) ? ' selected':'');
     chip.textContent = s.label;
     chip.onclick = ()=>{
-      if(includedSheets.has(s.key)) includedSheets.delete(s.key);
-      else includedSheets.add(s.key);
+      if(includedSheets.has(s.key)){
+        includedSheets.delete(s.key);
+      }else{
+        if(s.key === 'checklist'){
+          includedSheets = new Set(['checklist']);
+        }else{
+          includedSheets.delete('checklist');
+          includedSheets.add(s.key);
+        }
+      }
       renderPreview();
     };
     sheetChips.appendChild(chip);
@@ -681,13 +689,13 @@ function sheetHeader(title, sub){
 }
 
 function buildChecklistPages(words, title){
-  const byProgram = new Map();
+  const byGroup = new Map();
   words.forEach(e=>{
-    const key = e.program + '|' + e.grade;
-    if(!byProgram.has(key)) byProgram.set(key, {program:e.program, grade:e.grade, items:[]});
-    byProgram.get(key).items.push(e);
+    const key = e.grade + '|' + e.program + '|' + e.section;
+    if(!byGroup.has(key)) byGroup.set(key, {program:e.program, grade:e.grade, section:e.section, items:[]});
+    byGroup.get(key).items.push(e);
   });
-  const groups = [...byProgram.values()].sort((a,b)=> a.program-b.program);
+  const groups = [...byGroup.values()].sort((a,b)=> a.grade-b.grade || a.program-b.program);
   groups.forEach(g=> g.items.sort((a,b)=> a.word.toLowerCase().localeCompare(b.word.toLowerCase())));
 
   const perPage = 90;
@@ -699,7 +707,7 @@ function buildChecklistPages(words, title){
     const page = document.createElement('div');
     page.className = 'sheet-page';
     page.innerHTML = sheetHeader(title, `単語一覧（チェック用） ${out.length+1}ページ`) +
-      `<div class="fold-instructions">覚えた単語は横線で消す、まちがえた単語は◯で囲んでください。（Program別・アルファベット順）</div>`;
+      `<div class="fold-instructions">覚えた単語は横線で消す、まちがえた単語は◯で囲んでください。（Program・セクション別、各セクション内はアルファベット順）</div>`;
     const grid = document.createElement('div');
     grid.className = 'check-grid';
     pageWords.forEach(item=>{
@@ -723,11 +731,12 @@ function buildChecklistPages(words, title){
 
   groups.forEach(g=>{
     if(pageWords.filter(x=>!x.isHeader).length >= perPage) flushPage();
-    pageWords.push({isHeader:true, label: programLabel(g.program, g.grade)});
+    const label = `${programLabel(g.program, g.grade)} - ${g.section}`;
+    pageWords.push({isHeader:true, label});
     g.items.forEach(e=>{
       if(pageWords.filter(x=>!x.isHeader).length >= perPage){
         flushPage();
-        pageWords.push({isHeader:true, label: programLabel(g.program, g.grade) + '（続き）'});
+        pageWords.push({isHeader:true, label: label + '（続き）'});
       }
       pageWords.push({isHeader:false, entry:e});
     });
